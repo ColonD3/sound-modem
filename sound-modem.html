@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sound modem</title>
+<style>
+:root{--bg:#fff;--ink:#111;--mute:#777;--line:#ddd;--red:#e0301e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--ink:#f2f2f2;--mute:#999;--line:#333}}
+:root[data-theme="dark"]{--bg:#121212;--ink:#f2f2f2;--mute:#999;--line:#333}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,system-ui,"Helvetica Neue",sans-serif}
+main{max-width:640px;margin:0 auto;padding:32px 20px 60px}
+h1{font-size:clamp(38px,8vw,68px);line-height:.95;letter-spacing:-.03em;margin:0 0 8px;font-weight:800}
+p.sub{color:var(--mute);margin:0 0 24px;max-width:56ch}
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tabs button{font:inherit;font-weight:600;border:2px solid var(--line);background:none;color:var(--ink);padding:10px 16px;cursor:pointer;flex:1;border-radius:0}
+.tabs button[aria-pressed=true]{border-color:var(--red);color:var(--red)}
+h2{font-size:20px;margin:0 0 4px}
+label{display:block;font-weight:600;margin:14px 0 4px}
+textarea,select,input[type=password]{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--ink);padding:10px;resize:vertical}
+textarea{min-height:64px}
+textarea:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+.file{display:block;border:2px dashed var(--line);padding:14px;text-align:center;color:var(--mute);cursor:pointer;margin-top:6px}
+.file input{display:none}
+button.go{font:inherit;font-weight:600;border:2px solid var(--red);background:var(--red);color:#fff;padding:12px 14px;cursor:pointer;width:100%;margin-top:14px;border-radius:0}
+button.go:disabled{opacity:.4;cursor:default}
+button.stop{font:inherit;font-weight:600;border:2px solid var(--line);background:none;color:var(--mute);padding:10px 14px;cursor:pointer;width:100%;margin-top:10px;border-radius:0}
+.chk{display:flex;align-items:center;gap:8px;font-weight:400;margin-top:12px}
+.pill{color:var(--mute);font-size:13px;margin-top:8px}
+.status{font-weight:600;margin:16px 0 4px}
+.bar{height:8px;background:var(--line);margin:8px 0;position:relative}
+.bar div{height:100%;background:var(--red);width:0%;transition:width .1s linear}
+.tones{font:12px/1.4 ui-monospace,monospace;color:var(--mute);min-height:1.3em}
+canvas#rxcanvas{width:100%;max-width:280px;margin-top:12px;image-rendering:pixelated;border:1px solid var(--line);display:none}
+#rxtext{font-size:20px;font-weight:700;margin-top:10px;color:var(--red);word-break:break-word}
+.msg{color:var(--red);font-size:13px;min-height:1.3em;margin-top:6px}
+section{display:none}
+section.active{display:block}
+</style></head>
+<body><main>
+<h1>Sound modem</h1>
+<p class="sub">Turns a message or small picture into sound — two tones at once, like touch-tones — and plays it out loud. Another device listens with its microphone and rebuilds it live, no wifi, no bluetooth, no shared clock.</p>
+<div class="tabs" role="group">
+<button id="tabSend" aria-pressed="true">Send</button>
+<button id="tabRecv" aria-pressed="false">Receive</button>
+</div>
+
+<section id="sendSec" class="active">
+<div id="secretbox">
+<label for="secret">Message</label>
+<textarea id="secret">meet me at the lake at midnight</textarea>
+</div>
+<label class="file" tabindex="0" id="imglabel">Or send a small picture<input id="img" type="file" accept="image/*"></label>
+<div id="reswrap" style="display:none">
+<label for="res">Resolution (longest side) <span id="resv" style="font-weight:400;color:var(--mute)"></span></label>
+<input type="range" id="res" min="6" max="64" value="14">
+<label class="chk"><input type="checkbox" id="compress"> Compress (much smaller/faster, but the picture appears all at once instead of painting in live)</label>
+<div id="qualwrap" style="display:none">
+<label for="quality">Quality <span id="qualv" style="font-weight:400;color:var(--mute)"></span></label>
+<input type="range" id="quality" min="5" max="95" value="60">
+</div>
+<canvas id="preview" style="width:100%;max-width:180px;margin-top:8px;image-rendering:pixelated;border:1px solid var(--line);display:block"></canvas>
+</div>
+<label class="chk"><input type="checkbox" id="lock"> Lock with a password</label>
+<input type="password" id="pw" placeholder="Password" style="display:none;margin-top:8px">
+<div class="pill" id="est"></div>
+<button class="go" id="play">Play sound</button>
+<div class="msg" id="m1"></div>
+</section>
+
+<section id="recvSec">
+<p class="pill">Hold the listening device near the speaker, quiet room, moderate volume. It listens continuously — press play on the other device whenever you're ready.</p>
+<button class="go" id="listen">Start listening</button>
+<button class="stop" id="stoplisten" style="display:none">Stop listening</button>
+<div class="status" id="status"></div>
+<div class="bar"><div id="barfill"></div></div>
+<div class="tones" id="tones"></div>
+<input type="password" id="pw2" placeholder="Password (if it's locked)" style="display:none;margin-top:8px">
+<div id="rxtext"></div>
+<canvas id="rxcanvas" aria-label="Picture being received"></canvas>
+<div class="msg" id="m2"></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const LOW=[1200,1400,1600,1800,2000,2200,2400,2600];
+const HIGH=[3200,3400,3600,3800,4000,4200,4400,4600];
+const PRE=[1000,5000];
+const T=0.05; // seconds per symbol -> 6 bits/symbol * 20/s = 120 bps
+
+const enc=new TextEncoder(),td=new TextDecoder('utf-8',{fatal:true});
+async function key(pw){const h=await crypto.subtle.digest('SHA-256',enc.encode('soundmodem:'+pw));return crypto.subtle.importKey('raw',h,{name:'AES-GCM'},false,['encrypt','decrypt'])}
+async function lockBytes(bytes,pw){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},await key(pw),bytes));const o=new Uint8Array(1+12+ct.length);o[0]=1;o.set(iv,1);o.set(ct,13);return o}
+async function unlockBytes(bytes,pw){if(bytes[0]!==1)return bytes;const iv=bytes.slice(1,13),ct=bytes.slice(13);return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv},await key(pw),ct))}
+
+// ---- tabs ----
+$('tabSend').onclick=()=>{$('tabSend').setAttribute('aria-pressed','true');$('tabRecv').setAttribute('aria-pressed','false');$('sendSec').classList.add('active');$('recvSec').classList.remove('active')};
+$('tabRecv').onclick=()=>{$('tabRecv').setAttribute('aria-pressed','true');$('tabSend').setAttribute('aria-pressed','false');$('recvSec').classList.add('active');$('sendSec').classList.remove('active')};
+
+// ---- send: payload build (text or small image), same header scheme as invisible-ink ----
+let payloadImg=null;
+function computeDims(){if(!payloadImg)return[0,0];const W0=payloadImg.naturalWidth||payloadImg.width,H0=payloadImg.naturalHeight||payloadImg.height,long=+$('res').value;
+ let W,H;if(W0>=H0){W=long;H=Math.max(4,Math.round(long*H0/W0))}else{H=long;W=Math.max(4,Math.round(long*W0/H0))}
+ return[Math.min(64,W),Math.min(64,H)]}
+function areaSample(img,W,H){
+ const full=document.createElement('canvas');let fw=img.naturalWidth||img.width,fh=img.naturalHeight||img.height;
+ while(fw>W*2){fw=Math.max(W,Math.round(fw/2));fh=Math.max(H,Math.round(fh/2))}
+ full.width=fw;full.height=fh;const fx=full.getContext('2d');fx.imageSmoothingEnabled=true;fx.drawImage(img,0,0,fw,fh);
+ const sd=fx.getImageData(0,0,fw,fh).data,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d'),out=x.createImageData(W,H);
+ for(let j=0;j<H;j++)for(let i=0;i<W;i++){
+  const x0=Math.floor(i/W*fw),x1=Math.max(x0+1,Math.floor((i+1)/W*fw)),y0=Math.floor(j/H*fh),y1=Math.max(y0+1,Math.floor((j+1)/H*fh));
+  let r=0,g=0,b=0,n=0;for(let yy=y0;yy<y1;yy++)for(let xx=x0;xx<x1;xx++){const o=(yy*fw+xx)*4;r+=sd[o];g+=sd[o+1];b+=sd[o+2];n++}
+  const o=(j*W+i)*4;out.data[o]=r/n;out.data[o+1]=g/n;out.data[o+2]=b/n;out.data[o+3]=255}
+ x.putImageData(out,0,0);return[out,c]}
+function canvasToBlobP(c,type,q){return new Promise(res=>c.toBlob(res,type,q))}
+function blobToImage(blob){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=URL.createObjectURL(blob)})}
+let previewToken=0;
+async function buildImageBytes(){
+ const[W,H]=computeDims(),[id,c]=areaSample(payloadImg,W,H);
+ const rawLen=W*H*3+3;
+ if(!$('compress').checked){
+  const px=new Uint8Array(rawLen);px[0]=73;px[1]=W;px[2]=H;const d=id.data;
+  for(let i=0;i<W*H;i++){px[3+i*3]=d[i*4];px[4+i*3]=d[i*4+1];px[5+i*3]=d[i*4+2]}
+  return{bytes:px,W,H,kind:'raw'};
+ }
+ const q=(+$('quality').value)/100;
+ const blob=await canvasToBlobP(c,'image/jpeg',Math.max(0.05,q));
+ const jbuf=new Uint8Array(await blob.arrayBuffer());
+ if(jbuf.length+1>=rawLen){ // JPEG lost to raw overhead — use raw instead, automatically
+  const px=new Uint8Array(rawLen);px[0]=73;px[1]=W;px[2]=H;const d=id.data;
+  for(let i=0;i<W*H;i++){px[3+i*3]=d[i*4];px[4+i*3]=d[i*4+1];px[5+i*3]=d[i*4+2]}
+  return{bytes:px,W,H,kind:'raw-fallback',blob};
+ }
+ const px=new Uint8Array(jbuf.length+1);px[0]=74;px.set(jbuf,1);
+ return{bytes:px,W,H,kind:'jpeg',blob};
+}
+async function drawPreview(){if(!payloadImg)return;
+ const my=++previewToken;
+ const{bytes,W,H,kind,blob}=await buildImageBytes();
+ if(my!==previewToken)return;
+ const p=$('preview');p.width=W*8;p.height=H*8;const px2=p.getContext('2d');px2.imageSmoothingEnabled=false;
+ if(kind==='jpeg'||kind==='raw-fallback'&&blob){const im=await blobToImage(blob);if(my!==previewToken)return;px2.drawImage(im,0,0,p.width,p.height)}
+ else{const[id]=areaSample(payloadImg,W,H);const small=document.createElement('canvas');small.width=W;small.height=H;small.getContext('2d').putImageData(id,0,0);px2.drawImage(small,0,0,p.width,p.height)}
+ if($('compress').checked)$('qualv').textContent=bytes.length+' bytes'+(kind==='raw-fallback'?' (JPEG would\u2019ve been bigger — used raw instead)':' at '+$('quality').value+'% quality');
+ estimate();
+}
+async function buildPayload(){
+ if(payloadImg)return(await buildImageBytes()).bytes;
+ return enc.encode($('secret').value)}
+$('compress').onchange=()=>{$('qualwrap').style.display=$('compress').checked?'block':'none';drawPreview()};
+$('quality').addEventListener('input',drawPreview);
+function bytesToFrame(bytes){
+ const len=bytes.length,head=new Uint8Array(4);head[0]=(len>>>24)&255;head[1]=(len>>>16)&255;head[2]=(len>>>8)&255;head[3]=len&255;
+ let sum=0;for(const b of bytes)sum=(sum+b)&255;
+ const out=new Uint8Array(4+len+1);out.set(head,0);out.set(bytes,4);out[4+len]=sum;return out}
+function frameToSymbols(frame){
+ const bits=[];for(const b of frame)for(let k=7;k>=0;k--)bits.push((b>>k)&1);
+ while(bits.length%6!==0)bits.push(0);
+ const syms=[];for(let i=0;i<bits.length;i+=6){let v=0;for(let k=0;k<6;k++)v=(v<<1)|bits[i+k];syms.push(v)}
+ return syms}
+async function estimate(){
+ const bytes=await buildPayload();
+ const frame=bytesToFrame(bytes.length>500?bytes.slice(0,500):bytes); // cheap estimate, real build happens on play
+ const n=Math.ceil((bytes.length+5)*8/6);
+ const secs=0.35+n*T;
+ $('est').textContent=(bytes.length)+' bytes → about '+secs.toFixed(1)+'s of sound';
+}
+['secret'].forEach(id=>$(id).addEventListener('input',estimate));
+$('lock').onchange=()=>{$('pw').style.display=$('lock').checked?'block':'none';$('pw2').style.display=$('lock').checked?'block':'none';estimate()};
+$('pw').addEventListener('input',estimate);
+$('img').onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{payloadImg=im;$('imglabel').firstChild.textContent='Picture loaded: '+f.name+' (clear to go back to text)';$('secretbox').style.opacity=.4;$('reswrap').style.display='block';showRes();drawPreview();estimate()};im.src=URL.createObjectURL(f)};
+function showRes(){if(!payloadImg)return;const[W,H]=computeDims();$('resv').textContent=W+'×'+H+' px'}
+$('res').addEventListener('input',()=>{showRes();drawPreview();estimate()});
+$('imglabel').onkeydown=e=>{if(e.key==='Enter'||e.key===' ')$('img').click()};
+$('secret').addEventListener('input',()=>{if(payloadImg){payloadImg=null;$('img').value='';$('imglabel').firstChild.textContent='Or send a small picture';$('secretbox').style.opacity=1;$('reswrap').style.display='none'}});
+
+// ---- synth + play ----
+let actx=null;
+function synth(symbols,sr){
+ const preN=Math.round(0.3*sr),gapN=Math.round(0.05*sr),symN=Math.round(T*sr);
+ const total=preN+gapN+symbols.length*symN,buf=new Float32Array(total);
+ function tone(start,n,f1,f2){const fade=Math.min(240,Math.floor(n/4));
+  for(let i=0;i<n;i++){let env=1;if(i<fade)env=i/fade;else if(i>n-fade)env=(n-i)/fade;
+   const t=i/sr;buf[start+i]+=env*0.45*(Math.sin(2*Math.PI*f1*t)+Math.sin(2*Math.PI*f2*t))}}
+ tone(0,preN,PRE[0],PRE[1]);let p=preN+gapN;
+ for(const s of symbols){tone(p,symN,LOW[s>>3],HIGH[s&7]);p+=symN}
+ return buf}
+$('play').onclick=async()=>{
+ $('m1').textContent='';$('play').disabled=true;
+ try{
+  let bytes=await buildPayload();
+  if($('lock').checked&&$('pw').value)bytes=await lockBytes(bytes,$('pw').value);
+  const frame=bytesToFrame(bytes),symbols=frameToSymbols(frame);
+  actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  if(actx.state==='suspended')await actx.resume();
+  const data=synth(symbols,actx.sampleRate);
+  const buf=actx.createBuffer(1,data.length,actx.sampleRate);buf.copyToChannel(data,0);
+  const src=actx.createBufferSource();src.buffer=buf;src.connect(actx.destination);
+  src.onended=()=>{$('play').disabled=false};
+  src.start();
+  $('m1').textContent='Playing…';
+ }catch(e){$('m1').textContent='Could not play: '+(e.message||e);$('play').disabled=false}
+};
+estimate();
+
+// ---- receive ----
+function goertzel(samples,freq,sr){
+ const n=samples.length,k=Math.round(n*freq/sr),w=2*Math.PI*k/n,cw=Math.cos(w),sw=Math.sin(w),coeff=2*cw;
+ let s0=0,s1=0,s2=0;
+ for(let i=0;i<n;i++){s0=samples[i]+coeff*s1-s2;s2=s1;s1=s0}
+ const re=s1-s2*cw,im=s2*sw;return re*re+im*im}
+
+let rxCtx=null,rxAnalyser=null,rxStream=null,rxRunning=false,rxState='idle';
+let preambleStreak=0,tPreEnd=0,symbolsSeen=0,expectedSymbols=null;
+let rxBits=[],rxBytes=null,rxLen=null,rxLocked=false,rxDone=false;
+let td8=null;
+async function startListening(){
+ $('m2').textContent='';$('status').textContent='Asking for microphone…';
+ try{
+  rxStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ }catch(e){$('status').textContent='';$('m2').textContent='Microphone access was denied or unavailable.';return}
+ rxCtx=new (window.AudioContext||window.webkitAudioContext)();
+ const src=rxCtx.createMediaStreamSource(rxStream);
+ rxAnalyser=rxCtx.createAnalyser();rxAnalyser.fftSize=1024;
+ src.connect(rxAnalyser);
+ td8=new Float32Array(rxAnalyser.fftSize);
+ rxState='idle';preambleStreak=0;symbolsSeen=0;expectedSymbols=null;rxBits=[];rxBytes=null;rxLen=null;rxDone=false;
+ $('rxtext').textContent='';$('rxcanvas').style.display='none';$('barfill').style.width='0%';$('pw2').style.display='none';
+ $('status').textContent='Listening…';$('tones').textContent='';
+ rxRunning=true;$('listen').style.display='none';$('stoplisten').style.display='block';
+ requestAnimationFrame(rxLoop);
+}
+function stopListening(){
+ rxRunning=false;
+ if(rxStream)rxStream.getTracks().forEach(t=>t.stop());
+ if(rxCtx)rxCtx.close();
+ $('listen').style.display='block';$('stoplisten').style.display='none';
+ if(!rxDone)$('status').textContent='Stopped.';
+}
+$('listen').onclick=startListening;$('stoplisten').onclick=stopListening;
+
+let nextSymbolTime=0;
+function rxLoop(){
+ if(!rxRunning)return;
+ rxAnalyser.getFloatTimeDomainData(td8);
+ const sr=rxCtx.sampleRate;
+ const preE=goertzel(td8,PRE[0],sr)+goertzel(td8,PRE[1],sr);
+ if(rxState==='idle'){
+  if(preE>40){preambleStreak++;if(preambleStreak>4){rxState='inpreamble';$('status').textContent='Preamble detected…'}}
+  else preambleStreak=Math.max(0,preambleStreak-1);
+ } else if(rxState==='inpreamble'){
+  if(preE<15){ // energy dropped -> preamble ended, now in gap
+   tPreEnd=rxCtx.currentTime;
+   nextSymbolTime=tPreEnd+0.05+0.72*T; // skip the 50ms gap, sample near end of first symbol
+   rxState='receiving';
+   $('status').textContent='Receiving…';
+  }
+ } else if(rxState==='receiving'){
+  if(rxCtx.currentTime>=nextSymbolTime){
+   let bestLo=-1,bestLoE=-1,bestHi=-1,bestHiE=-1;
+   for(let i=0;i<LOW.length;i++){const e=goertzel(td8,LOW[i],sr);if(e>bestLoE){bestLoE=e;bestLo=i}}
+   for(let i=0;i<HIGH.length;i++){const e=goertzel(td8,HIGH[i],sr);if(e>bestHiE){bestHiE=e;bestHi=i}}
+   $('tones').textContent='hearing '+LOW[bestLo]+'Hz + '+HIGH[bestHi]+'Hz  (symbol '+(symbolsSeen+1)+(expectedSymbols?'/'+expectedSymbols:'')+')';
+   const sym=(bestLo<<3)|bestHi;
+   for(let k=5;k>=0;k--)rxBits.push((sym>>k)&1);
+   symbolsSeen++;
+   onNewBits();
+   nextSymbolTime+=T;
+  }
+ }
+ if(rxRunning)requestAnimationFrame(rxLoop);
+}
+function bitsToBytesArr(bits,nBytes){const out=new Uint8Array(nBytes);for(let i=0;i<nBytes;i++){let v=0;for(let k=0;k<8;k++)v=(v<<1)|(bits[i*8+k]||0);out[i]=v}return out}
+async function onNewBits(){
+ if(rxLen===null&&rxBits.length>=32){
+  const b=bitsToBytesArr(rxBits,4);rxLen=(b[0]<<24)|(b[1]<<16)|(b[2]<<8)|b[3];
+  if(rxLen<0||rxLen>200000){$('m2').textContent='Signal looks corrupted (bad length). Try again, closer/louder.';rxState='idle';preambleStreak=0;return}
+  expectedSymbols=Math.ceil((4+rxLen+1)*8/6);
+ }
+ if(rxLen!==null){
+  const totalBits=(4+rxLen+1)*8;
+  $('barfill').style.width=Math.min(100,100*rxBits.length/totalBits)+'%';
+  if(rxBits.length>=totalBits&&!rxDone){
+   rxDone=true;
+   const all=bitsToBytesArr(rxBits,4+rxLen+1);
+   const body=all.slice(4,4+rxLen);let sum=0;for(const x of body)sum=(sum+x)&255;
+   const ok=sum===all[4+rxLen];
+   $('status').textContent=ok?'Received — checksum OK':'Received — checksum mismatch, may be corrupted';
+   await finishReceive(body);
+   rxState='idle';preambleStreak=0;
+  } else if(rxLen!==null){
+   // progressive preview for image payloads once we know the type+size
+   maybeProgressivePreview();
+  }
+ }
+}
+let progW=0,progH=0,progStarted=false;
+function maybeProgressivePreview(){
+ if(rxBits.length<24)return; // need type+W+H bytes at least (3 bytes = 24 bits, offset by 32-bit length header = need 56 bits total)
+ if(rxBits.length<32+24)return;
+ const head=bitsToBytesArr(rxBits.slice(32,32+24),3);
+ if(head[0]!==73)return; // not an image payload, nothing to preview progressively
+ if(!progStarted){progW=head[1];progH=head[2];progStarted=true;const cv=$('rxcanvas');cv.width=progW*8;cv.height=progH*8;cv.style.display='block'}
+ const bodyBitsAvail=rxBits.length-32-24;
+ const pxBytesAvail=Math.floor(bodyBitsAvail/8);
+ const nPix=Math.floor(pxBytesAvail/3);
+ if(nPix<1)return;
+ const small=document.createElement('canvas');small.width=progW;small.height=progH;const sx=small.getContext('2d'),im=sx.createImageData(progW,progH);
+ const pxBytes=bitsToBytesArr(rxBits.slice(32+24,32+24+nPix*3*8),nPix*3);
+ for(let i=0;i<nPix;i++){im.data[i*4]=pxBytes[i*3];im.data[i*4+1]=pxBytes[i*3+1];im.data[i*4+2]=pxBytes[i*3+2];im.data[i*4+3]=255}
+ for(let i=nPix;i<progW*progH;i++)im.data[i*4+3]=0;
+ sx.putImageData(im,0,0);
+ const cv=$('rxcanvas'),cx=cv.getContext('2d');cx.imageSmoothingEnabled=false;cx.clearRect(0,0,cv.width,cv.height);cx.drawImage(small,0,0,cv.width,cv.height);
+}
+async function finishReceive(body){
+ let bytes=body;
+ if(bytes[0]===1){
+  if(!$('pw2').value){$('pw2').style.display='block';$('m2').textContent='This one is locked. Enter the password and it will unlock automatically.';rxLocked=true;pendingLocked=bytes;return}
+  try{bytes=await unlockBytes(bytes,$('pw2').value)}catch{$('m2').textContent='Wrong password.';return}
+ }
+ await renderFinal(bytes);
+}
+let pendingLocked=null;
+$('pw2').addEventListener('input',async()=>{
+ if(!pendingLocked||!$('pw2').value)return;
+ try{const bytes=await unlockBytes(pendingLocked,$('pw2').value);pendingLocked=null;$('m2').textContent='';await renderFinal(bytes)}catch{}
+});
+async function renderFinal(bytes){
+ if(bytes[0]===73&&bytes.length>=3){
+  const W=bytes[1],H=bytes[2],c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d'),im=x.createImageData(W,H);
+  for(let i=0;i<W*H;i++){im.data[i*4]=bytes[3+i*3];im.data[i*4+1]=bytes[4+i*3];im.data[i*4+2]=bytes[5+i*3];im.data[i*4+3]=255}
+  x.putImageData(im,0,0);
+  const cv=$('rxcanvas');cv.width=W*8;cv.height=H*8;cv.style.display='block';const cx=cv.getContext('2d');cx.imageSmoothingEnabled=false;cx.drawImage(c,0,0,cv.width,cv.height);
+  $('rxtext').textContent='';
+ } else if(bytes[0]===74){
+  try{
+   const blob=new Blob([bytes.slice(1)],{type:'image/jpeg'});
+   const im=new Image();await new Promise((res,rej)=>{im.onload=res;im.onerror=rej;im.src=URL.createObjectURL(blob)});
+   const cv=$('rxcanvas');cv.width=im.naturalWidth*4;cv.height=im.naturalHeight*4;cv.style.display='block';
+   const cx=cv.getContext('2d');cx.imageSmoothingEnabled=false;cx.drawImage(im,0,0,cv.width,cv.height);
+   $('rxtext').textContent='';
+  }catch{$('m2').textContent='Received a compressed picture but could not decode it.'}
+ } else {
+  try{$('rxtext').textContent=td.decode(bytes)}catch{$('m2').textContent='Received data but could not read it as text.'}
+ }
+}
+</script>
+</body></html>
