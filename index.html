@@ -74,6 +74,7 @@ section.active{display:block}
 <button class="stop" id="stoplisten" style="display:none">Stop listening</button>
 <div class="status" id="status"></div>
 <div class="bar"><div id="barfill"></div></div>
+<div class="pill" id="bytecount"></div>
 <div class="tones" id="tones"></div>
 <input type="password" id="pw2" placeholder="Password (if it's locked)" style="display:none;margin-top:8px">
 <div id="rxtext"></div>
@@ -210,7 +211,7 @@ function goertzel(samples,freq,sr){
  for(let i=0;i<n;i++){s0=samples[i]+coeff*s1-s2;s2=s1;s1=s0}
  const re=s1-s2*cw,im=s2*sw;return re*re+im*im}
 
-let rxCtx=null,rxAnalyser=null,rxStream=null,rxRunning=false,rxState='idle';
+let rxCtx=null,rxAnalyser=null,rxStream=null,rxRunning=false,rxState='idle',rxIntervalId=null;
 let preambleStreak=0,tPreEnd=0,symbolsSeen=0,expectedSymbols=null;
 let rxBits=[],rxBytes=null,rxLen=null,rxLocked=false,rxDone=false;
 let td8=null;
@@ -224,14 +225,15 @@ async function startListening(){
  rxAnalyser=rxCtx.createAnalyser();rxAnalyser.fftSize=1024;
  src.connect(rxAnalyser);
  td8=new Float32Array(rxAnalyser.fftSize);
- rxState='idle';preambleStreak=0;symbolsSeen=0;expectedSymbols=null;rxBits=[];rxBytes=null;rxLen=null;rxDone=false;
- $('rxtext').textContent='';$('rxcanvas').style.display='none';$('barfill').style.width='0%';$('pw2').style.display='none';
+ rxState='idle';preambleStreak=0;symbolsSeen=0;expectedSymbols=null;rxBits=[];rxBytes=null;rxLen=null;rxDone=false;progStarted=false;
+ $('rxtext').textContent='';$('rxcanvas').style.display='none';$('barfill').style.width='0%';$('bytecount').textContent='';$('pw2').style.display='none';
  $('status').textContent='Listening…';$('tones').textContent='';
  rxRunning=true;$('listen').style.display='none';$('stoplisten').style.display='block';
- requestAnimationFrame(rxLoop);
+ rxIntervalId=setInterval(rxLoop,15);
 }
 function stopListening(){
  rxRunning=false;
+ if(rxIntervalId)clearInterval(rxIntervalId);
  if(rxStream)rxStream.getTracks().forEach(t=>t.stop());
  if(rxCtx)rxCtx.close();
  $('listen').style.display='block';$('stoplisten').style.display='none';
@@ -268,7 +270,6 @@ function rxLoop(){
    nextSymbolTime+=T;
   }
  }
- if(rxRunning)requestAnimationFrame(rxLoop);
 }
 function bitsToBytesArr(bits,nBytes){const out=new Uint8Array(nBytes);for(let i=0;i<nBytes;i++){let v=0;for(let k=0;k<8;k++)v=(v<<1)|(bits[i*8+k]||0);out[i]=v}return out}
 async function onNewBits(){
@@ -280,6 +281,7 @@ async function onNewBits(){
  if(rxLen!==null){
   const totalBits=(4+rxLen+1)*8;
   $('barfill').style.width=Math.min(100,100*rxBits.length/totalBits)+'%';
+ $('bytecount').textContent=Math.floor(rxBits.length/8)+' / '+(4+rxLen+1)+' bytes';
   if(rxBits.length>=totalBits&&!rxDone){
    rxDone=true;
    const all=bitsToBytesArr(rxBits,4+rxLen+1);
@@ -300,7 +302,7 @@ function maybeProgressivePreview(){
  if(rxBits.length<32+24)return;
  const head=bitsToBytesArr(rxBits.slice(32,32+24),3);
  if(head[0]!==73)return; // not an image payload, nothing to preview progressively
- if(!progStarted){progW=head[1];progH=head[2];progStarted=true;const cv=$('rxcanvas');cv.width=progW*8;cv.height=progH*8;cv.style.display='block'}
+ if(!progStarted){progW=head[1];progH=head[2];progStarted=true;const cv=$('rxcanvas');cv.width=progW*8;cv.height=progH*8;cv.style.display='block';const cx0=cv.getContext('2d');cx0.fillStyle='#888';cx0.fillRect(0,0,cv.width,cv.height)}
  const bodyBitsAvail=rxBits.length-32-24;
  const pxBytesAvail=Math.floor(bodyBitsAvail/8);
  const nPix=Math.floor(pxBytesAvail/3);
